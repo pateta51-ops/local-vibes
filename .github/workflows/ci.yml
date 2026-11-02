@@ -12,8 +12,10 @@ jobs:
     defaults:
       run:
         shell: powershell
+    env:
+      # The build script uses chmod, so run npm scripts in Git Bash (not cmd or WSL bash).
+      npm_config_script_shell: C:\Program Files\Git\bin\bash.exe
     steps:
       - uses: actions/checkout@v5
       - run: npm ci
-      # The build script uses chmod, so run npm scripts in Git Bash (not cmd or WSL bash).
-      - run: npm test --script-shell="C:\Program Files\Git\bin\bash.exe"
+      - run: npm test

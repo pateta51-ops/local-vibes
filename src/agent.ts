@@ -208,6 +208,25 @@ function runBash(root: string, command: string): string {
   return cap(`[exit ${r.status}]\n${out}`.trimEnd());
 }
 
+const IMAGE_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+};
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+
+/** Load an image under `root` as a data URL, or return an ERROR string. */
+export function loadImage(root: string, p: string): { dataUrl: string } | string {
+  const full = resolveInSandbox(root, p);
+  const mime = IMAGE_TYPES[path.extname(full).toLowerCase()];
+  if (!mime) return `ERROR: ${p} is not a supported image (${Object.keys(IMAGE_TYPES).join(", ")})`;
+  const size = fs.statSync(full).size;
+  if (size > MAX_IMAGE_BYTES) return `ERROR: ${p} is ${size} bytes; images are limited to ${MAX_IMAGE_BYTES}`;
+  return { dataUrl: `data:${mime};base64,${fs.readFileSync(full).toString("base64")}` };
+}
+
 const MUTATORS = new Set(["write_file", "edit_file", "run_bash"]);
 
 function dispatch(name: string, root: string, args: Record<string, string>): string {
@@ -245,6 +264,7 @@ export function toolSchemas(readOnly: boolean): ChatTool[] {
     fn("read_file", "Read a file's contents.", { path: { type: "string" } }, ["path"]),
     fn("list_dir", "List the entries of a directory (default: working dir root).", { path: { type: "string" } }, []),
     fn("grep", "Search files under `path` for a regex pattern.", { pattern: { type: "string" }, path: { type: "string" } }, ["pattern"]),
+    fn("view_image", "Look at an image file (png, jpg, webp, gif). The image is shown to you in the next message.", { path: { type: "string" } }, ["path"]),
   ];
   if (!readOnly) {
     tools.push(
@@ -369,6 +389,9 @@ export async function runAgent(task: string, opts: RunOptions = {}): Promise<str
       return finalize(msg.content ?? "(model returned no content)", i);
     }
 
+    // Tool messages can only carry text, so images requested via view_image are
+    // sent in one user message after this turn's tool results.
+    const images: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
     for (const tc of msg.tool_calls) {
       const call = tc as OpenAI.Chat.Completions.ChatCompletionMessageToolCall & {
         function: { name: string; arguments: string };
@@ -385,13 +408,21 @@ export async function runAgent(task: string, opts: RunOptions = {}): Promise<str
       let result: string;
       try {
         if (readOnly && MUTATORS.has(name)) result = `ERROR: ${name} is disabled in read_only mode`;
-        else result = dispatch(name, root, args);
+        else if (name === "view_image") {
+          const img = loadImage(root, args.path);
+          if (typeof img === "string") result = img;
+          else {
+            images.push({ type: "text", text: `Image ${args.path}:` }, { type: "image_url", image_url: { url: img.dataUrl } });
+            result = `${args.path} loaded; it is shown in the next message`;
+          }
+        } else result = dispatch(name, root, args);
         if (MUTATORS.has(name) && !result.startsWith("ERROR") && args.path) touched.add(args.path);
       } catch (e) {
         result = `ERROR in ${name}: ${e}`;
       }
       messages.push({ role: "tool", tool_call_id: call.id, content: cap(result) });
     }
+    if (images.length) messages.push({ role: "user", content: images });
   }
   return finalize("(reached max iterations without calling finish)", config.maxIters);
 }

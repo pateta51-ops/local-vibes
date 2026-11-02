@@ -51,6 +51,14 @@ test("edit_file matches multi-line LF old_string against a CRLF file", () => {
   assert.equal(fs.readFileSync(path.join(ROOT, f), "utf8"), "uno\r\ndos\r\nthree\r\n");
 });
 
+test("view_image: read-only, sandboxed, images only", () => {
+  assert.ok(agent.toolSchemas(true).some((t) => t.function.name === "view_image"), "view_image missing in read_only");
+  fs.writeFileSync(path.join(ROOT, "dot.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  assert.match(agent.loadImage(ROOT, "dot.png").dataUrl, /^data:image\/png;base64,iVBORw==$/);
+  assert.match(agent.loadImage(ROOT, "crlf.txt"), /not a supported image/);
+  assert.throws(() => agent.loadImage(ROOT, "../outside.png"), /escapes working_dir/);
+});
+
 test("cap truncates oversized output", () => {
   const big = "x".repeat(agent.config.toolResultCap + 500);
   const out = agent.cap(big);

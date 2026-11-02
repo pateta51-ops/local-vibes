@@ -11,8 +11,9 @@ jobs:
     runs-on: [self-hosted, local-vibes]
     defaults:
       run:
-        shell: bash
+        # Git Bash, not C:\Windows\System32\bash.exe (WSL), which can't read Windows paths.
+        shell: C:\Program Files\Git\bin\bash.exe --noprofile --norc -e -o pipefail {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: npm ci
       - run: npm test

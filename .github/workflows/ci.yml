@@ -11,9 +11,9 @@ jobs:
     runs-on: [self-hosted, local-vibes]
     defaults:
       run:
-        # Git Bash, not C:\Windows\System32\bash.exe (WSL), which can't read Windows paths.
-        shell: C:\Program Files\Git\bin\bash.exe --noprofile --norc -e -o pipefail {0}
+        shell: powershell
     steps:
       - uses: actions/checkout@v5
       - run: npm ci
-      - run: npm test
+      # The build script uses chmod, so run npm scripts in Git Bash (not cmd or WSL bash).
+      - run: npm test --script-shell="C:\Program Files\Git\bin\bash.exe"
